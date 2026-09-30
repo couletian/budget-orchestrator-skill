@@ -1,0 +1,218 @@
+# -*- coding: utf-8 -*-
+"""实时监听器（旁路采集）。
+
+直接复用 token-dashboard 的解析口径，读取
+    ~/.workbuddy/projects/<workspace>/**/*.jsonl
+每行 JSON 中的 providerData.rawUsage / providerData.usage（请求级真实 usage）。
+
+为什么可行：这些 jsonl 是 WorkBuddy 逐条**实时落盘**的，因此本监听器可以在
+不干扰主会话、不启动嵌套 CLI 的前提下，获得准实时的 token 与金额消耗。
+
+增量策略
+- 为每个文件维护字节游标；文件被截断/轮转时自动回退到 0。
+- 只解析以换行结束的完整行，最后一段不完整内容留待下次。
+- since_ts 之前的历史请求可选择跳过（默认跳过，保证"任务预算"从任务开始计）。
+"""
+from __future__ import annotations
+
+import datetime
+import glob
+import json
+import os
+import threading
+import time
+from typing import Callable, Optional
+
+from . import pricing
+from .ledger import Ledger
+
+
+def parse_ts(v) -> Optional[float]:
+    if isinstance(v, (int, float)):
+        if v > 1e12:
+            return v / 1000.0
+        if v > 1e9:
+            return float(v)
+        return None
+    if isinstance(v, str):
+        s = v.strip()
+        for fmt in ("%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ",
+                    "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S.%f"):
+            try:
+                return datetime.datetime.strptime(s, fmt).replace(
+                    tzinfo=datetime.timezone.utc).timestamp()
+            except Exception:
+                pass
+        try:
+            return float(s) / 1000.0
+        except Exception:
+            return None
+    return None
+
+
+def extract(o: dict) -> Optional[dict]:
+    """从一条记录中抽取 usage（与 token-dashboard 的 grab() 口径一致）。"""
+    pd = o.get("providerData")
+    if not isinstance(pd, dict):
+        return None
+    ru = pd.get("rawUsage") or {}
+    u = pd.get("usage") or {}
+    tt = ru.get("total_tokens") or u.get("totalTokens")
+    if not tt:
+        return None
+    model = pd.get("model") or pd.get("requestModelId") or pd.get("requestModelName") or "unknown"
+    ptd = ru.get("prompt_tokens_details") or {}
+    ch = ru.get("prompt_cache_hit_tokens")
+    if ch is None:
+        ch = ptd.get("cached_tokens") or 0
+    cw = (ptd.get("cached_creation_tokens") or ptd.get("cache_write_tokens")
+          or ru.get("cache_creation_input_tokens") or 0)
+    ctd = ru.get("completion_tokens_details") or {}
+    rt = ctd.get("reasoning_tokens") or ru.get("completion_thinking_tokens") or 0
+    it = int(ru.get("prompt_tokens") or u.get("inputTokens") or 0)
+    ot = int(ru.get("completion_tokens") or u.get("outputTokens") or 0)
+    ts = parse_ts(o.get("timestamp"))
+    if ts is None:
+        return None
+    mid = pd.get("messageId") or pd.get("messageID") or ""
+    sess = o.get("sessionId") or pd.get("sessionId") or ""
+    # 工具维度：同一条记录通常既是 LLM 请求（带 usage）又是工具调用（带 name），
+    # 因此可在零额外 IO 的前提下把消耗归因到具体工具与目标。
+    tool = o.get("name") or pd.get("toolName") or None
+    tgt = pd.get("argumentsDisplayText") or None
+    return {
+        "uid": f"{sess}|{mid}" if mid else f"{sess}|{ts:.3f}|{tt}|{model}",
+        "ts": ts,
+        "session_id": sess,
+        "model": pricing.norm_model(model),
+        "input_tokens": it,
+        "output_tokens": ot,
+        "cache_hit": int(ch or 0),
+        "cache_write": int(cw or 0),
+        "reasoning_tokens": int(rt or 0),
+        "total_tokens": int(tt),
+        "tool": tool,
+        "target": tgt,
+    }
+
+
+def agent_of(fp: str, projects_dir: str) -> str:
+    """从文件路径判定归属：主会话 / 子代理。
+
+    兼容两种布局：
+      <ws>/<sessionId>/subagents/agent-xxxx.jsonl   （实际布局）
+      <ws>/subagents/agent-xxxx.jsonl               （扁平布局）
+    只要路径中出现 `subagents` 段即视为子代理，取其后一段（或末段）作为标识。
+    """
+    rel = os.path.relpath(fp, projects_dir).replace("\\", "/")
+    parts = [p for p in rel.split("/") if p]
+    if "subagents" in parts:
+        i = parts.index("subagents")
+        name = parts[i + 1] if i + 1 < len(parts) else parts[-1]
+        return "sub:" + os.path.splitext(name)[0].replace("agent-", "")
+    return "main"
+
+
+class Watcher:
+    def __init__(self, ledger: Ledger, projects_dir: str, workspace: Optional[str] = None,
+                 since_ts: Optional[float] = None, interval: float = 1.5,
+                 on_batch: Optional[Callable[[list], None]] = None,
+                 backfill: bool = False):
+        self.lg = ledger
+        self.projects = os.path.abspath(projects_dir)
+        self.workspace = workspace
+        self.interval = interval
+        self.on_batch = on_batch
+        self.backfill = backfill
+        self.since_ts = since_ts if since_ts is not None else time.time()
+        self._stop = threading.Event()
+        self._skip_primed = False
+        self.stats = {"scanned": 0, "inserted": 0, "last_scan": 0.0}
+
+    # ── 路径 ──────────────────────────────────────────────────────────────
+    def root(self) -> str:
+        if self.workspace:
+            return os.path.join(self.projects, self.workspace)
+        return self.projects
+
+    def files(self) -> list:
+        return glob.glob(os.path.join(self.root(), "**", "*.jsonl"), recursive=True)
+
+    # ── 单次扫描 ───────────────────────────────────────────────────────────
+    def scan_once(self) -> int:
+        new = []
+        for fp in self.files():
+            try:
+                st = os.stat(fp)
+            except OSError:
+                continue
+            off, _osz, _mt = self.lg.file_cursor(fp)
+            # 首次运行且不回填：把已有文件游标推到末尾，只统计此后新增
+            if not self._skip_primed and not self.backfill and off == 0 and st.st_size > 0:
+                self.lg.set_file_cursor(fp, st.st_size, st.st_size, st.st_mtime)
+                continue
+            if st.st_size < off:      # 文件被截断/重写
+                off = 0
+            if st.st_size == off:
+                continue
+            chunk = b""
+            with open(fp, "rb") as fh:
+                fh.seek(off)
+                chunk = fh.read()
+            # 只消费以换行结尾的完整行
+            cut = chunk.rfind(b"\n")
+            if cut < 0:
+                continue
+            usable, consumed = chunk[:cut + 1], off + cut + 1
+            agent = agent_of(fp, self.projects)
+            for line in usable.split(b"\n"):
+                if not line.strip():
+                    continue
+                try:
+                    o = json.loads(line.decode("utf-8", "ignore"))
+                except Exception:
+                    continue
+                if not isinstance(o, dict):
+                    continue
+                r = extract(o)
+                if not r:
+                    continue
+                if r["ts"] < self.since_ts:
+                    continue
+                r["agent"] = agent
+                r["src_file"] = os.path.relpath(fp, self.projects)
+                r["is_peak"] = 1 if pricing.is_peak(r["ts"]) else 0
+                r["cost_cny"] = pricing.cost_cny(
+                    r["model"], r["input_tokens"], r["output_tokens"],
+                    r["cache_hit"], r["cache_write"], r["ts"])
+                r["task_id"] = self.lg.get_meta("active_task", "root")
+                if self.lg.add_request(r):
+                    new.append(r)
+            self.lg.set_file_cursor(fp, consumed, st.st_size, st.st_mtime)
+        self._skip_primed = True
+        self.stats["scanned"] += 1
+        self.stats["inserted"] += len(new)
+        self.stats["last_scan"] = time.time()
+        if new and self.on_batch:
+            try:
+                self.on_batch(new)
+            except Exception:
+                pass
+        return len(new)
+
+    # ── 循环 ──────────────────────────────────────────────────────────────
+    def run(self):
+        while not self._stop.is_set():
+            try:
+                self.scan_once()
+            except Exception as e:  # 采集失败不应中断循环
+                self.lg.add_event("watch_error", str(e), level="error")
+            self._stop.wait(self.interval)
+
+    def start(self) -> threading.Thread:
+        t = threading.Thread(target=self.run, daemon=True, name="boc-watcher")
+        t.start()
+        return t
+
+    def stop(self):
+        self._stop.set()

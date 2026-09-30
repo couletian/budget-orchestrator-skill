@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>预算编排面板 · Budget Orchestrator</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#15171b;--card:#1d2026;--card2:#22262d;--bd:#2b2f37;--bd2:#383d47;
+  --t1:#e9ecf1;--t2:#aeb6c2;--t3:#7d8695;--t4:#5d6673;
+  --acc:#6aa3e0;--ok:#4fb98a;--warn:#e0b34a;--danger:#e06666;--purple:#a98bd6;
+  --track:#2a2e36;
+}
+body.light{
+  --bg:#f6f6f4;--card:#fff;--card2:#f2f2ef;--bd:#e3e2dd;--bd2:#d5d3cc;
+  --t1:#1f2328;--t2:#5d626b;--t3:#8b9099;--t4:#a8adb5;
+  --acc:#3f6b99;--ok:#2f8f66;--warn:#b8860b;--danger:#c0392b;--purple:#7a5fa8;--track:#e8e6e0;
+}
+body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  background:var(--bg);color:var(--t1);padding:18px 16px 40px;max-width:1560px;margin:0 auto;font-size:13px}
+header{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px}
+h1{font-size:17px;font-weight:700;letter-spacing:.2px}
+.sub{font-size:11px;color:var(--t3);margin-top:2px}
+.warn{margin-top:9px;padding:7px 11px;border:1px solid #d9a441;border-radius:9px;
+  background:rgba(217,164,65,.1);color:#f0c674;font-size:11.5px;line-height:1.6;max-width:660px}
+.warn b{color:#ffd98a;font-weight:700}
+.warn[hidden]{display:none}
+.conn{font-size:11px;color:var(--t3);display:flex;align-items:center;gap:5px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--t4);display:inline-block}
+.dot.on{background:var(--ok);box-shadow:0 0 6px var(--ok)}
+.dot.off{background:var(--danger)}
+button{font-family:inherit;cursor:pointer;border:1px solid var(--bd2);background:var(--card);
+  color:var(--t2);font-size:12px;padding:5px 12px;border-radius:7px;transition:.15s}
+button:hover{border-color:var(--acc);color:var(--t1)}
+button.primary{background:var(--acc);border-color:var(--acc);color:#fff}
+button.primary:hover{filter:brightness(1.1)}
+button.danger{border-color:var(--danger);color:var(--danger)}
+button.danger:hover{background:var(--danger);color:#fff}
+button:disabled{opacity:.4;cursor:not-allowed}
+input{font-family:inherit;background:var(--card2);border:1px solid var(--bd2);color:var(--t1);
+  font-size:12px;padding:5px 9px;border-radius:7px;outline:none;width:110px}
+input:focus{border-color:var(--acc)}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px 16px;margin-bottom:13px}
+.sec-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;flex-wrap:wrap}
+.sec-h h2{font-size:13px;font-weight:600;color:var(--t1)}
+.sec-h .meta{font-size:11px;color:var(--t3)}
+
+.bar{height:12px;border-radius:7px;background:var(--track);overflow:hidden;position:relative;margin:8px 0 4px}
+.bar i{display:block;height:100%;border-radius:7px;transition:width .4s ease,background .3s}
+.bar .soft{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--warn);opacity:.8}
+.bar .hard{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--danger);opacity:.9}
+
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(128px,1fr));gap:9px}
+.kpi{background:var(--card2);border:1px solid var(--bd);border-radius:9px;padding:10px 12px;min-width:0}
+.kpi .k{font-size:10.5px;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kpi .v{font-size:17px;font-weight:700;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kpi .v small{font-size:11px;color:var(--t3);font-weight:500;margin-left:3px}
+.kpi .s{font-size:10px;color:var(--t4);margin-top:2px}
+
+.grid{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:13px;align-items:start}
+@media(max-width:1080px){.grid{grid-template-columns:minmax(0,1fr)}}
+
+.trow{display:flex;align-items:center;gap:9px;padding:7px 2px;border-bottom:1px solid var(--bd);min-width:0}
+.trow:last-child{border-bottom:none}
+.tname{flex:1.5;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px}
+.tid{font-size:10px;color:var(--t4);margin-left:5px}
+.tbar{flex:1.2;height:7px;background:var(--track);border-radius:4px;overflow:hidden;min-width:40px}
+.tbar i{display:block;height:100%;border-radius:4px}
+.tnum{flex:none;width:118px;text-align:right;font-size:11.5px;color:var(--t2);white-space:nowrap}
+.st{font-size:10px;padding:1px 7px;border-radius:5px;border:1px solid var(--bd2);color:var(--t3);flex:none}
+.st.running{color:var(--acc);border-color:var(--acc)}
+.st.done{color:var(--ok);border-color:var(--ok)}
+.st.failed{color:var(--danger);border-color:var(--danger)}
+.ind{color:var(--t4);font-size:11px;flex:none}
+
+.mrow{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:11.5px;min-width:0}
+.mname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--t2)}
+.mbar{flex:.9;height:6px;background:var(--track);border-radius:3px;overflow:hidden;min-width:30px}
+.mbar i{display:block;height:100%;border-radius:3px}
+.mnum{flex:none;width:96px;text-align:right;font-size:11px;color:var(--t3);white-space:nowrap}
+
+.ev{display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--bd);font-size:11.5px;line-height:1.5}
+.ev:last-child{border-bottom:none}
+.ev .tm{flex:none;color:var(--t4);font-variant-numeric:tabular-nums;width:52px}
+.ev .lv{flex:none;width:6px;height:6px;border-radius:50%;margin-top:5px;background:var(--t4)}
+.ev .lv.warn{background:var(--warn)}.ev .lv.error{background:var(--danger)}
+.ev .ms{flex:1;min-width:0;color:var(--t2);word-break:break-word}
+.scroll{max-height:300px;overflow-y:auto;padding-right:4px}
+.scroll::-webkit-scrollbar{width:7px}
+.scroll::-webkit-scrollbar-thumb{background:var(--bd2);border-radius:4px}
+
+.actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.actions .grp{display:flex;gap:6px;align-items:center;border-left:1px solid var(--bd);padding-left:10px;margin-left:2px}
+.actions .grp:first-child{border-left:none;padding-left:0;margin-left:0}
+.lbl{font-size:11px;color:var(--t3)}
+.tag{font-size:10.5px;padding:2px 8px;border-radius:6px;border:1px solid var(--bd2);color:var(--t3)}
+.tag.ok{color:var(--ok);border-color:var(--ok)}
+.tag.warn{color:var(--warn);border-color:var(--warn)}
+.tag.over{color:var(--danger);border-color:var(--danger)}
+.empty{font-size:12px;color:var(--t4);padding:14px 0;text-align:center}
+svg text{font-family:inherit}
+#toast{position:fixed;right:18px;bottom:18px;background:var(--card2);border:1px solid var(--bd2);
+  color:var(--t1);padding:9px 14px;border-radius:9px;font-size:12px;opacity:0;transition:.25s;pointer-events:none}
+#toast.on{opacity:1}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>预算编排面板</h1>
+    <div class="sub" id="subline">连接中…</div>
+    <div class="warn" id="priceWarn" hidden></div>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px">
+    <span class="conn"><span class="dot" id="dot"></span><span id="connTxt">连接中</span></span>
+    <button id="themeBtn">浅色</button>
+  </div>
+</header>
+
+<section class="card">
+  <div class="sec-h">
+    <h2>预算进度</h2>
+    <div style="display:flex;gap:8px;align-items:center">
+      <span class="tag" id="lvlTag">—</span>
+      <span class="tag" id="stateTag">—</span>
+      <span class="tag" id="modeTag">—</span>
+      <span class="tag" id="leanTag">—</span>
+    </div>
+  </div>
+  <div class="bar"><i id="barFill" style="width:0"></i><div class="soft" id="softMark"></div><div class="hard" id="hardMark" style="left:100%"></div></div>
+  <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--t3);margin-bottom:11px">
+    <span id="barLeft">—</span><span id="barRight">—</span>
+  </div>
+  <div class="kpis" id="kpis"></div>
+</section>
+
+<section class="card">
+  <div class="sec-h">
+    <h2>自主协调指令</h2>
+    <div style="display:flex;gap:8px;align-items:center">
+      <span class="meta" id="apNext"></span>
+      <span class="tag" id="apMode">—</span>
+    </div>
+  </div>
+  <div id="apBox"><div class="empty">暂无指令</div></div>
+</section>
+
+<section class="card">
+  <div class="sec-h"><h2>控制台</h2><span class="meta">手动打断 / 调整预算 / 切换模式</span></div>
+  <div class="actions">
+    <button id="btnPause">暂停</button>
+    <button id="btnResume" class="primary">恢复</button>
+    <button id="btnStop" class="danger">停止</button>
+    <span class="grp">
+      <span class="lbl">追加 Token</span><input id="inAddTk" placeholder="如 200000">
+      <span class="lbl">金额</span><input id="inAddCny" placeholder="如 5">
+      <button id="btnAdd">追加</button>
+    </span>
+    <span class="grp">
+      <span class="lbl">模式</span>
+      <button id="btnObserve">监督</button>
+      <button id="btnEnforce">强制</button>
+    </span>
+    <span class="grp">
+      <button id="btnExport">导出 JSON</button>
+    </span>
+    <span class="grp">
+      <button id="btnShutdownPanel" class="danger" title="彻底关闭本面板进程（含看守进程的重拉）。之后可用 daemon start / respawn 重新唤起。">关闭面板</button>
+    </span>
+  </div>
+</section>
+
+<div class="grid">
+  <div>
+    <section class="card">
+      <div class="sec-h"><h2>任务树</h2><span class="meta" id="taskMeta"></span></div>
+      <div class="scroll" id="tasks"><div class="empty">暂无子任务</div></div>
+    </section>
+    <section class="card">
+      <div class="sec-h"><h2>用量时间线（近 60 分钟）</h2><span class="meta" id="seriesMeta"></span></div>
+      <svg id="seriesSvg" width="100%" height="150"></svg>
+    </section>
+  </div>
+  <div>
+    <section class="card">
+      <div class="sec-h"><h2>按模型</h2><span class="meta" id="modelMeta"></span></div>
+      <div class="scroll" id="models"><div class="empty">暂无数据</div></div>
+    </section>
+    <section class="card">
+      <div class="sec-h"><h2>按执行体</h2><span class="meta">主会话 / 子代理</span></div>
+      <div id="agents"><div class="empty">暂无数据</div></div>
+    </section>
+    <section class="card">
+      <div class="sec-h"><h2>瘦身审计</h2><span class="meta" id="leanMeta"></span></div>
+      <div id="leanBox"><div class="empty">暂无数据</div></div>
+    </section>
+    <section class="card">
+      <div class="sec-h"><h2>事件日志</h2><span class="meta" id="evMeta"></span></div>
+      <div class="scroll" id="events"><div class="empty">暂无事件</div></div>
+    </section>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+function fmtTk(n){n=+n||0;if(n>=1e8)return (n/1e8).toFixed(2)+'亿';if(n>=1e4)return (n/1e4).toFixed(2)+'万';return String(Math.round(n));}
+function fmtCny(n){n=+n||0;if(n>=1e4)return '¥'+(n/1e4).toFixed(2)+'万';if(n>=1)return '¥'+n.toFixed(2);return '¥'+n.toFixed(4);}
+function hhmm(ts){const d=new Date(ts*1000);return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');}
+function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('on'),2200);}
+
+let DARK=true;
+try{if(localStorage.getItem('boc-light')==='1')DARK=false;}catch(e){}
+function applyTheme(){document.body.classList.toggle('light',!DARK);$('#themeBtn').textContent=DARK?'浅色':'深色';}
+applyTheme();
+$('#themeBtn').onclick=()=>{DARK=!DARK;try{localStorage.setItem('boc-light',DARK?'0':'1');}catch(e){}applyTheme();render(LAST);};
+
+let LAST=null;
+function levelColor(l){return l==='over'?'var(--danger)':l==='warn'?'var(--warn)':'var(--ok)';}
+
+function render(d){
+  if(!d)return; LAST=d;
+  // 兜底：任一区块出错都不应该让整个面板停在"暂无数据"上，且错误必须可见
+  try {
+    renderAll(d);
+  } catch(err){
+    console.error('[boc-panel] 渲染失败:', err);
+    const s=$('#subline');
+    if(s) s.textContent = '⚠ 渲染异常：' + (err && err.message || err) + '（其余区块仍可正常刷新）';
+  }
+}
+function renderAll(d){
+  // 字段归一化：任何字段缺失（首次启动 / 数据异常）都不应让整块面板崩掉
+  d.used=d.used||{}; d.budget=d.budget||{}; d.pct=d.pct||{}; d.remaining=d.remaining||{};
+  d.rate=d.rate||{}; d.tasks=d.tasks||[]; d.models=d.models||[]; d.agents=d.agents||[];
+  d.events=d.events||[]; d.series=d.series||[]; d.lean=d.lean||{}; d.directive=d.directive||{};
+  d.lean_audit=d.lean_audit||{}; d.pricing=d.pricing||{all_priced:true,unpriced:[],est_cny:0};
+  const b=d.budget,u=d.used,p=d.pct,rm=d.remaining;
+  // 顶部
+  $('#subline').textContent = '工作区 '+d.workspace+' · 统计起点 '+
+    (d.since_ts?new Date(d.since_ts*1000).toLocaleString():'—')+' · 刷新 '+new Date(d.now*1000).toLocaleTimeString();
+  // 牌价未知告警：这些模型的金额是兜底档假设值，不是实际计费
+  const pw=d.pricing, up=pw.unpriced||[];
+  const pwEl=$('#priceWarn');
+  if(up.length){
+    pwEl.hidden=false;
+    pwEl.innerHTML='⚠ <b>'+up.length+' 个模型牌价未知</b>：'+
+      up.map(x=>esc(x.model)).join('、')+
+      ' —— 其 ¥'+Number(pw.est_cny||0).toFixed(4)+' 按兜底档<b>假设</b>得出，非实际计费。'+
+      '补牌价见 <code>core/pricing.py</code> 的 PRICE。';
+  } else pwEl.hidden=true;
+  $('#lvlTag').textContent = {ok:'正常',warn:'接近上限',over:'超预算'}[d.level]||d.level;
+  $('#lvlTag').className = 'tag '+(d.level==='over'?'over':d.level==='warn'?'warn':'ok');
+  $('#stateTag').textContent = {running:'运行中',paused:'已暂停',stopped:'已停止'}[d.state]||d.state;
+  $('#modeTag').textContent = d.mode==='enforce'?'强制执行':'监督模式';
+
+  // 进度条：取 token/金额百分比的最大值
+  // 进度条：取 token/金额百分比的最大值
+  const overall = p.overall || 0;
+  const fill = Math.min(100, overall);
+  $('#barFill').style.width = fill+'%';
+  $('#barFill').style.background = levelColor(d.level);
+  $('#softMark').style.left = Math.min(100,b.soft_pct)+'%';
+  $('#hardMark').style.left = Math.min(100,b.hard_pct)+'%';
+  $('#barLeft').textContent = '已用 '+overall.toFixed(1)+'%'+(b.tokens>0?(' · Token '+p.tokens.toFixed(1)+'%'):'')+(b.cny>0?(' · 金额 '+p.cny.toFixed(1)+'%'):'');
+  $('#barRight').textContent = (b.tokens>0||b.cny>0)?('软 '+b.soft_pct+'% / 硬 '+b.hard_pct+'%'):'未设置预算（仅观测）';
+
+  const rate=d.rate||{};
+  const eta = rate.eta_min!=null ? fmtTkPct(rate.eta_min)+'后触顶' : '—';
+  // 监听健康度：lag=0 表示已把日志读到底 ——「面板没变化」这时是宿主还没落盘，
+  // 不是本工具采集滞后。没有这一项时，两种原因看起来完全一样。
+  const w=d.watch||{};
+  const hasW = !!d.watch;
+  const wLag = Number(w.lag_bytes||0);
+  const wTime = (hasW && w.newest_mtime)
+    ? new Date(w.newest_mtime*1000).toLocaleTimeString('zh-CN',{hour12:false}) : '—';
+  const kpis=[
+    ['已用 Token', fmtTk(u.tokens), (u.requests||0)+' 次请求'],
+    ['已用金额', fmtCny(u.cny), '峰谷计价'],
+    ['预算 Token', b.tokens>0?fmtTk(b.tokens):'未设', b.tokens>0?('剩余 '+fmtTk(rm.tokens)):''],
+    ['预算金额', b.cny>0?fmtCny(b.cny):'未设', b.cny>0?('剩余 '+fmtCny(rm.cny)):''],
+    ['消耗速率', fmtTk(rate.tokens_per_min||0)+'/分', fmtCny(rate.cny_per_min||0)+'/分'],
+    ['预计触顶', eta, '按近 5 分钟速率'],
+    ['输入/输出', fmtTk(u.input)+' / '+fmtTk(u.output), '缓存命中 '+fmtTk(u.cache_hit)],
+    ['监听', !hasW?'—':(wLag>0?('待读 '+fmtTk(wLag)+'B'):'已读到底'),
+     hasW?('日志最后写入 '+wTime):''],
+  ];
+  $('#kpis').innerHTML = kpis.map(k=>'<div class="kpi"><div class="k">'+k[0]+'</div><div class="v">'+k[1]+'</div>'+(k[2]?'<div class="s">'+k[2]+'</div>':'')+'</div>').join('');
+
+  // 任务树
+  const tasks=d.tasks||[];
+  const actTask=tasks.find(t=>t.id===activeTaskId())||{};
+  $('#taskMeta').textContent = tasks.length+' 个节点 · 活跃 '+(actTask.name||'—');
+  {
+    const rootTask = tasks.find(t=>t.id==='root') ||
+      {id:'root',name:'总任务',status:'running',used_tokens:0};
+    const kids={};
+    tasks.forEach(t=>{
+      if(t.id==='root') return;          // 关键：root 不能算自己的孩子，否则无限递归 → 栈溢出
+      const pid=t.parent||'root';
+      (kids[pid]=kids[pid]||[]).push(t);
+    });
+    const row=(t,depth)=>{
+      const pc = t.pct!=null?Math.min(100,t.pct):null;
+      const col = pc==null?'var(--acc)':(pc>=100?'var(--danger)':pc>=70?'var(--warn)':'var(--ok)');
+      const bg = t.budget_tokens ? fmtTk(t.budget_tokens) : '∞';
+      return '<div class="trow">'+
+        '<span class="ind">'+(depth?'└':'●')+'</span>'+
+        '<span class="tname" style="padding-left:'+(depth*12)+'px">'+esc(t.name||t.id)+
+          '<span class="tid">'+esc(t.id)+'</span></span>'+
+        '<span class="st '+(t.status||'')+'">'+
+          (({pending:'待办',running:'进行',done:'完成',failed:'失败'})[t.status]||t.status||'')+'</span>'+
+        '<span class="tbar"><i style="width:'+(pc==null?100:pc)+'%;background:'+col+'"></i></span>'+
+        '<span class="tnum">'+fmtTk(t.used_tokens||0)+' / '+bg+'</span></div>';
+    };
+    let html = tasks.length ? row(rootTask,0) : '';
+    const walk=(pid,depth)=>{
+      if(depth>8) return;                // 防御：万一数据结构异常，也不会把调用栈打爆
+      (kids[pid]||[]).forEach(t=>{ html+=row(t,depth); walk(t.id,depth+1); });
+    };
+    walk('root',1);
+    $('#tasks').innerHTML = html || '<div class="empty">暂无子任务</div>';
+  }
+
+  // 按模型
+  const ms=d.models||[];
+  if(ms.length){
+    const mx=Math.max(...ms.map(m=>m.tt),1);
+    $('#models').innerHTML = ms.slice(0,12).map(m=>{
+      const w=Math.min(100,m.tt/mx*100);
+      return '<div class="mrow"><span class="mname" title="'+esc(m.model)+'">'+esc(m.model)+'</span>'+
+        '<span class="mbar"><i style="width:'+w+'%;background:var(--acc)"></i></span>'+
+        '<span class="mnum">'+fmtTk(m.tt)+' · '+fmtCny(m.cost)+'</span></div>';
+    }).join('');
+    $('#modelMeta').textContent = ms.length+' 个模型';
+  } else{$('#models').innerHTML='<div class="empty">暂无数据</div>';$('#modelMeta').textContent='';}
+
+  // 按执行体
+  const ag=d.agents||[];
+  if(ag.length){
+    const mx=Math.max(...ag.map(a=>a.tt),1);
+    $('#agents').innerHTML = ag.map(a=>{
+      const w=Math.min(100,a.tt/mx*100);
+      const nm = a.agent==='main'?'主会话':('子代理 '+a.agent.replace(/^sub:/,''));
+      return '<div class="mrow"><span class="mname">'+esc(nm)+'</span>'+
+        '<span class="mbar"><i style="width:'+w+'%;background:var(--purple)"></i></span>'+
+        '<span class="mnum">'+fmtTk(a.tt)+' · '+fmtCny(a.cost)+'</span></div>';
+    }).join('');
+  } else $('#agents').innerHTML='<div class="empty">暂无数据</div>';
+
+  // 瘦身审计（ponytail 融合）
+  const lv = d.lean || {}, la = d.lean_audit || {};
+  const leanName = {normal:'常规',lite:'轻瘦身',full:'强制阶梯',ultra:'极端瘦身'}[lv.level] || lv.name || '—';
+  $('#leanTag').textContent = '瘦身 ' + leanName;
+  $('#leanTag').className = 'tag ' + (lv.level==='ultra'?'over':(lv.level==='full'?'warn':''));
+  $('#leanMeta').textContent = leanName + (lv.level?' · '+lv.level:'');
+  let lh = '';
+  if(lv.rules && lv.rules.length){
+    lh += '<div style="font-size:11.5px;color:var(--t2);line-height:1.65;margin-bottom:9px">'+
+      lv.rules.map(r=>'· '+esc(r)).join('<br>')+'</div>';
+  }
+  const fs2 = la.findings || [];
+  if(fs2.length){
+    lh += fs2.map(f=>{
+      const col = f.severity==='high'?'var(--danger)':(f.severity==='medium'?'var(--warn)':'var(--acc)');
+      const tb = f.severity==='high'?'高':(f.severity==='medium'?'中':'低');
+      return '<div style="border-left:2px solid '+col+';padding-left:9px;margin-bottom:10px">'+
+        '<div style="font-size:10.5px;color:var(--t4);margin-bottom:2px">['+tb+'] 阶梯第 '+f.rung+' 级 · '+esc(f.kind)+'</div>'+
+        '<div style="font-size:11.5px;color:var(--t1);line-height:1.5">'+esc(f.evidence)+'</div>'+
+        '<div style="font-size:11px;color:var(--t3);margin-top:3px;line-height:1.5">→ '+esc(f.advice)+'</div></div>';
+    }).join('');
+  } else {
+    lh += '<div class="empty">未发现明显可压缩项</div>';
+  }
+  if(la.io){
+    const io2 = la.io;
+    lh += '<div style="margin-top:10px;padding-top:9px;border-top:1px solid var(--bd);font-size:11px;color:var(--t3)">'+
+      '输出占输入 '+io2.out_per_in.toFixed(1)+'%　不能省：'+esc((lv.never_cut||[]).slice(0,6).join('、'))+'</div>';
+  }
+  $('#leanBox').innerHTML = lh;
+
+  // 自主协调指令（AI 自行执行，人工可覆盖）
+  const ad = d.directive || {};
+  const apName = {proceed:'继续推进', adapt:'降级后继续（自主）', escalate:'需要人工'}[ad.mode] || ad.mode || '—';
+  const apCol = ad.mode==='escalate' ? 'var(--danger)' : (ad.mode==='adapt' ? 'var(--warn)' : 'var(--ok)');
+  $('#apMode').textContent = apName;
+  $('#apMode').className = 'tag ' + (ad.mode==='escalate' ? 'over' : (ad.mode==='adapt' ? 'warn' : 'ok'));
+  $('#apNext').textContent = ad.next_check ? '自检节奏：每个子任务后' : '';
+  let ah = '';
+  if(ad.note) ah += '<div style="font-size:12px;color:var(--t1);line-height:1.65;margin-bottom:9px">'+esc(ad.note)+'</div>';
+  const acts = ad.actions || [];
+  if(acts.length){
+    ah += '<div style="font-size:11px;color:var(--t3);margin-bottom:6px">待执行动作 '+acts.length+' 项（AI 自行执行，无需批准）</div>';
+    ah += acts.map((a,i)=>'<div style="display:flex;gap:8px;font-size:11.5px;color:var(--t2);line-height:1.6;margin-bottom:5px">'+
+      '<span style="color:'+apCol+';flex:none;font-variant-numeric:tabular-nums">'+(i+1)+'.</span>'+
+      '<span><span style="color:var(--t4);font-size:10px">[阶梯'+a.rung+']</span> '+esc(a.instruction)+'</span></div>').join('');
+  }
+  if(ad.essential_pending && ad.essential_pending.length){
+    ah += '<div style="margin-top:8px;font-size:11px;color:var(--t3)">主干待办：'+esc(ad.essential_pending.join('、'))+'</div>';
+  }
+  if(ad.escalate){
+    ah += '<div style="margin-top:10px;padding:9px 11px;border-left:2px solid var(--danger);background:rgba(224,102,102,.09);font-size:11.5px;color:var(--t1);line-height:1.6">'+
+      esc(ad.escalate.reason)+'<br><span style="color:var(--t2)">'+esc(ad.escalate.ask)+'</span></div>';
+  }
+  $('#apBox').innerHTML = ah || '<div class="empty">暂无指令</div>';
+
+  // 事件
+  const ev=d.events||[];
+  if(ev.length){
+    $('#events').innerHTML = ev.slice(0,80).map(e=>{
+      const d2=new Date(e.ts*1000);
+      return '<div class="ev"><span class="tm">'+String(d2.getHours()).padStart(2,'0')+':'+String(d2.getMinutes()).padStart(2,'0')+':'+String(d2.getSeconds()).padStart(2,'0')+'</span>'+
+        '<span class="lv '+(e.level||'')+'"></span><span class="ms">'+esc(e.message)+'</span></div>';
+    }).join('');
+    $('#evMeta').textContent = ev.length+' 条';
+  } else{$('#events').innerHTML='<div class="empty">暂无事件</div>';$('#evMeta').textContent='';}
+
+  drawSeries(d.series||[]);
+
+  // 按钮态
+  $('#btnPause').disabled = d.state!=='running';
+  $('#btnResume').disabled = d.state==='running';
+  $('#btnObserve').className = d.mode==='observe'?'primary':'';
+  $('#btnEnforce').className = d.mode==='enforce'?'primary':'';
+}
+function fmtTkPct(min){const h=Math.floor(min/60);return h>0?(h+'h'+Math.round(min%60)+'m'):(Math.round(min)+'分钟');}
+function activeTaskId(){return (LAST&&LAST.active_task)||'root';}
+
+function drawSeries(s){
+  const svg=$('#seriesSvg'); const W=svg.clientWidth||600, H=150, pl=44, pr=8, pt=10, pb=20;
+  if(!s.length){svg.setAttribute('viewBox','0 0 '+W+' '+H);svg.innerHTML='<text x="12" y="'+(H/2)+'" font-size="11" fill="'+(DARK?'#5d6673':'#a8adb5')+'">该时段无数据</text>';$('#seriesMeta').textContent='';return;}
+  const t1=s[s.length-1].t, t0=t1-60*60;
+  const pts=s.filter(p=>p.t>=t0);
+  const mx=Math.max(...pts.map(p=>p.tk),1), mxc=Math.max(...pts.map(p=>p.cy),1e-9);
+  const X=t=>pl+(W-pl-pr)*((t-t0)/(t1-t0||1));
+  const Y=v=>pt+(H-pt-pb)*(1-v/mx);
+  let bars='';
+  const gap=Math.max(1.5,(W-pl-pr)/Math.max(pts.length,1)*0.28);
+  pts.forEach(p=>{
+    const x=X(p.t), h=(H-pt-pb)*(p.tk/mx);
+    bars+='<rect x="'+(x-gap/2).toFixed(1)+'" y="'+(H-pb-h).toFixed(1)+'" width="'+gap.toFixed(1)+'" height="'+Math.max(0.6,h).toFixed(1)+'" rx="1.5" fill="var(--acc)" opacity=".75"/>';
+  });
+  let line='';
+  if(pts.length>1){
+    const Yc=v=>pt+(H-pt-pb)*(1-v/mxc);
+    line='M'+pts.map(p=>X(p.t).toFixed(1)+' '+Yc(p.cy).toFixed(1)).join(' L');
+  }
+  let grid='';
+  for(let i=0;i<=3;i++){const y=pt+(H-pt-pb)*i/3;grid+='<line x1="'+pl+'" y1="'+y+'" x2="'+(W-pr)+'" y2="'+y+'" stroke="var(--bd)"/>';}
+  let xl='';
+  for(let i=0;i<=4;i++){const t=t0+(t1-t0)*i/4;xl+='<text x="'+X(t).toFixed(1)+'" y="'+(H-6)+'" font-size="9" fill="var(--t4)" text-anchor="middle">'+hhmm(t)+'</text>';}
+  svg.setAttribute('viewBox','0 0 '+W+' '+H); svg.setAttribute('height',H);
+  svg.innerHTML=grid+
+    '<text x="'+(pl-6)+'" y="'+(pt+8)+'" font-size="9" fill="var(--t4)" text-anchor="end">'+fmtTk(mx)+'</text>'+
+    '<text x="'+(pl-6)+'" y="'+(H-pb)+'" font-size="9" fill="var(--t4)" text-anchor="end">0</text>'+
+    bars+'<path d="'+line+'" fill="none" stroke="var(--warn)" stroke-width="1.4" opacity=".85"/>'+xl;
+  $('#seriesMeta').textContent='柱=Token（峰值 '+fmtTk(mx)+'）  线=金额（峰值 '+fmtCny(mxc)+'）';
+}
+
+// ── 控制 ────────────────────────────────────────────────────────────────
+async function post(body){
+  try{
+    const r=await fetch('/api/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const j=await r.json();
+    if(j.ok===false)toast('失败：'+(j.error||'未知'));
+    else toast('已执行：'+body.action);
+    return j;
+  }catch(e){toast('请求失败');}
+}
+$('#btnPause').onclick=()=>post({action:'pause',reason:'面板手动暂停'});
+$('#btnResume').onclick=()=>post({action:'resume'});
+$('#btnStop').onclick=()=>{if(confirm('确定终止当前任务？'))post({action:'stop',reason:'面板手动终止'});};
+$('#btnAdd').onclick=()=>{
+  const t=parseFloat($('#inAddTk').value)||0, c=parseFloat($('#inAddCny').value)||0;
+  if(!t&&!c){toast('请填写追加数量');return;}
+  post({action:'add_budget',tokens:t||null,cny:c||null});
+  $('#inAddTk').value='';$('#inAddCny').value='';
+};
+$('#btnObserve').onclick=()=>post({action:'set_mode',mode:'observe'});
+$('#btnEnforce').onclick=()=>post({action:'set_mode',mode:'enforce'});
+$('#btnExport').onclick=()=>{window.open('/api/export','_blank');};
+$('#btnShutdownPanel').onclick=()=>{
+  if(!confirm('彻底关闭面板？\n\n· 面板进程与看守进程的重拉都会停止\n· 之后可用 bo.py daemon start 或 bo.py respawn 重新唤起（预算与账本不受影响）'))return;
+  shutdownPanel();
+};
+async function shutdownPanel(){
+  try{
+    await fetch('/api/control',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({action:'shutdown_panel'})});
+  }catch(e){/* 进程即将退出，连接中断属正常 */}
+  const ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:#000;color:#eee;display:flex;'+
+    'align-items:center;justify-content:center;flex-direction:column;gap:14px;'+
+    'font:15px/1.7 system-ui,sans-serif;z-index:9999;text-align:center;padding:24px';
+  ov.innerHTML='<div style="font-size:22px;font-weight:600">面板已关闭</div>'+
+    '<div style="opacity:.75">预算与账本数据仍保留在磁盘上。</div>'+
+    '<div style="opacity:.75">重新唤起：<code style="background:#222;padding:2px 6px;border-radius:4px">bo.py daemon start</code>'+
+    ' 或 <code style="background:#222;padding:2px 6px;border-radius:4px">bo.py respawn</code></div>';
+  document.body.appendChild(ov);
+  if(es){try{es.close();}catch(e){}}
+}
+
+// ── SSE ─────────────────────────────────────────────────────────────────
+let es=null;
+function connect(){
+  if(es)es.close();
+  es=new EventSource('/api/stream');
+  es.onopen=()=>{$('#dot').className='dot on';$('#connTxt').textContent='已连接';};
+  es.onmessage=e=>{try{render(JSON.parse(e.data));}catch(err){}};
+  es.onerror=()=>{$('#dot').className='dot off';$('#connTxt').textContent='重连中';};
+}
+connect();
+setInterval(()=>{if(es&&es.readyState===2)connect();},5000);
+let _rz;
+new ResizeObserver(()=>{clearTimeout(_rz);_rz=setTimeout(()=>render(LAST),150);}).observe($('#seriesSvg').parentElement);
+</script>
+</body>
+</html>
