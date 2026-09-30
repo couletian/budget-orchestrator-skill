@@ -32,7 +32,7 @@
 - **瘦身**：`core/lean.py`，把 ponytail 的 YAGNI 阶梯与输出纪律变成可测量项（见 §5）。
 - **交互**：`core/panel.py` + `web/index.html`，SSE 每秒推送；`mcp_server.py` 暴露 9 个工具。
 
-## 2. 验证结果
+## 2. 前期验证结果
 
 | 验证项 | 方法 | 结果 |
 |---|---|---|
@@ -63,34 +63,7 @@ SK="<skill目录>/bo.py"
 "$PY" "$SK" daemon stop                              # 停止
 ```
 
-## 4. 对评审意见的采纳情况
-
-评审意见整体判断准确，采纳了绝大部分；有三处做了调整，理由如下。
-
-**采纳**
-- 确定性预算控制层（账本 + 价格表 + 阈值）——**核心**，且不交给 LLM 判断。
-- 多 agent 角色分工（Orchestrator / Planner / Executor / Reviewer / Supervisor / Interrupt），
-  写成 SKILL.md 里的**协作协议**，可执行。
-- 预留协调与监督开销（`reserve_pct`，默认 15%）。
-- 降级阶梯、完成度定义（预算约束下最大化预期质量）、MVP 渐进路径。
-- 可视化面板 + 实时事件流（选了 SSE）。
-
-**调整（附理由）**
-1. **不做"调用前预留—提交"（reserve/commit）。**
-   该模型成立的前提是能拦截 LLM 调用；WorkBuddy 桌面版不暴露此类内核钩子。
-   强行模拟只会得到"预估不准 + 假控制"。改为**消费后秒级计量 + 快速反馈**：
-   日志落盘到被读到通常在 1–2 秒内，足够在下一轮迭代前踩刹车。
-2. **放弃"嵌套 CLI 子进程托管"路线。**
-   曾尝试用 `codebuddy -p --output-format stream-json` 起受限子进程以获得真正的 `kill` 能力，
-   实测在桌面版环境下失败：子进程继承宿主的 `CODEBUDDY_SERVICE_PROXY_URL`，去抢宿主已占用的
-   `127.0.0.1:7306`，抛未捕获异常后**挂死**（`EADDRINUSE`）。清 `CODEBUDDY_MCP_CONFIG`、
-   加 `--strict-mcp-config`、`CODEBUDDY_DISABLE_IDE=1` 均不能解决。
-   该路线在 CLI 独立运行（非桌面内嵌）时才可能成立，已记录备查。
-3. **"硬控制"的表述下修为"确定性规则 + 依约执行"。**
-   面板/`check` 能给出不可商量的 `STOP`，但最终停手要由 agent 或人执行。
-   这是平台边界决定的，不应向用户许诺内核级硬截断。
-
-## 5. 与 ponytail 的融合
+## 4. 与 ponytail 的融合
 
 `ponytail` 是套"逼你把代码写少"的编程技能：**YAGNI 阶梯**（先问要不要做，再谈怎么写）+
 **输出纪律**（代码优先、解释≤3 行）+ 三档强度（lite/full/ultra）+ `ponytail:` 债务标注。
@@ -126,7 +99,7 @@ SK="<skill目录>/bo.py"
 **没有采纳的**：`ponytail:` 债务注释的自动收集（那是代码仓库层面的账，
 与 token 预算无关，按 YAGNI 跳过）；也不做"省下的 token 折算成钱"，理由同上。
 
-## 6. 目录结构
+## 5. 目录结构
 
 ```
 budget-orchestrator/
@@ -145,7 +118,7 @@ budget-orchestrator/
   docs/OPERATIONS.md    对 WorkBuddy 底层文件的操作记录与回滚说明
 ```
 
-## 7. AI 自主协调为主（默认模式）
+## 6. AI 自主协调为主（默认模式）
 
 **设计立场**：预算约束应该由 AI 自己执行，而不是每超一点就停下来等人批准。
 
@@ -188,10 +161,10 @@ bo.py task --cny 0.045 --priority 5 add T1 --name "核心功能"   # 额度/优�
 
 **模式对照**：`auto`（默认·自主协调） / `observe`（只观测不干预） / `enforce`（硬停等人）。
 
-## 8. 已知限制
+## 7. 已知限制
 
 - 无法拦截 LLM 调用，只能事后秒级计量（见 4.3）。
-- 金额为牌价粗估，非实际账单。
+- 金额为牌价粗估，非实际账单-必须在使用前手动更新计价表
 - 面板需守护进程存活；`daemon stop` 后面板不可访问（数据仍在 `ledger.db`）。
 - 峰谷规则内置 2026 年节假日表，跨年需在 `core/pricing.py` 追加。
 - 预算按任务计：只统计 `since_ts` 之后的请求。跨任务复用同一账本时，
